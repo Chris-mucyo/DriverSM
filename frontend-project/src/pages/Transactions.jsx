@@ -3,7 +3,7 @@ import axios from 'axios'
 import toast from 'react-hot-toast'
 import DataTable from '../components/DataTable'
 import Modal from '../components/Modal'
-import { Plus } from 'lucide-react'
+import { Plus, AlertCircle } from 'lucide-react'
 
 const Transactions = () => {
     const [transactions, setTransactions] = useState([])
@@ -12,6 +12,7 @@ const Transactions = () => {
     const [loading, setLoading] = useState(true)
     const [isModalOpen, setIsModalOpen] = useState(false)
     const [editingTransaction, setEditingTransaction] = useState(null)
+    const [selectedProduct, setSelectedProduct] = useState(null)
     const [formData, setFormData] = useState({
         productCode: '',
         warehouseCode: '',
@@ -41,8 +42,27 @@ const Transactions = () => {
         }
     }
 
+    const handleProductChange = (productCode) => {
+        const product = products.find(p => p.productCode === productCode)
+        setSelectedProduct(product)
+        setFormData({ ...formData, productCode })
+    }
+
+    const validateStock = () => {
+        if (formData.transactionType === 'OUT' && selectedProduct) {
+            if (selectedProduct.quantityInStock < parseInt(formData.quantityMoved)) {
+                toast.error(`Insufficient stock! Only ${selectedProduct.quantityInStock} units available.`)
+                return false
+            }
+        }
+        return true
+    }
+
     const handleSubmit = async (e) => {
         e.preventDefault()
+
+        if (!validateStock()) return
+
         try {
             if (editingTransaction) {
                 await axios.put(`/api/transactions/${editingTransaction.transactionId}`, formData)
@@ -59,10 +79,10 @@ const Transactions = () => {
     }
 
     const handleDelete = async (transaction) => {
-        if (window.confirm('Are you sure you want to delete this transaction?')) {
+        if (window.confirm('Are you sure you want to delete this transaction? This will reverse the stock movement.')) {
             try {
                 await axios.delete(`/api/transactions/${transaction.transactionId}`)
-                toast.success('Transaction deleted successfully')
+                toast.success('Transaction deleted and stock updated successfully')
                 fetchData()
             } catch (error) {
                 toast.error('Failed to delete transaction')
@@ -79,12 +99,15 @@ const Transactions = () => {
             transactionType: transaction.transactionType,
             transactionDate: transaction.transactionDate.split('T')[0]
         })
+        const product = products.find(p => p.productCode === transaction.productCode)
+        setSelectedProduct(product)
         setIsModalOpen(true)
     }
 
     const closeModal = () => {
         setIsModalOpen(false)
         setEditingTransaction(null)
+        setSelectedProduct(null)
         setFormData({
             productCode: '',
             warehouseCode: '',
@@ -120,13 +143,16 @@ const Transactions = () => {
     return (
         <div className="space-y-6">
             <div className="flex justify-between items-center">
-                <h1 className="text-3xl font-bold text-foreground">Stock Transactions</h1>
+                <div>
+                    <h1 className="text-3xl font-bold text-foreground">Stock Transactions</h1>
+                    <p className="text-muted-foreground mt-1">Record stock movements (IN/OUT)</p>
+                </div>
                 <button
                     onClick={() => setIsModalOpen(true)}
                     className="flex items-center space-x-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
                 >
                     <Plus className="h-5 w-5" />
-                    <span>Add Transaction</span>
+                    <span>Record Transaction</span>
                 </button>
             </div>
 
@@ -137,24 +163,34 @@ const Transactions = () => {
                 onDelete={handleDelete}
             />
 
-            <Modal isOpen={isModalOpen} onClose={closeModal} title={editingTransaction ? 'Edit Transaction' : 'Add Transaction'}>
+            <Modal isOpen={isModalOpen} onClose={closeModal} title={editingTransaction ? 'Edit Transaction' : 'Record New Transaction'} size="lg">
                 <form onSubmit={handleSubmit} className="space-y-4">
                     <div>
                         <label className="block text-sm font-medium text-foreground mb-2">Product *</label>
                         <select
                             value={formData.productCode}
-                            onChange={(e) => setFormData({ ...formData, productCode: e.target.value })}
+                            onChange={(e) => handleProductChange(e.target.value)}
                             className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                             required
+                            disabled={!!editingTransaction}
                         >
                             <option value="">Select Product</option>
                             {products.map(product => (
                                 <option key={product.productCode} value={product.productCode}>
-                                    {product.productName} (Stock: {product.quantityInStock})
+                                    {product.productName} - Stock: {product.quantityInStock} | ${product.unitPrice}
                                 </option>
                             ))}
                         </select>
                     </div>
+
+                    {selectedProduct && formData.transactionType === 'OUT' && (
+                        <div className="flex items-center space-x-2 p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-md border border-yellow-200 dark:border-yellow-800">
+                            <AlertCircle className="h-5 w-5 text-yellow-600 dark:text-yellow-500" />
+                            <p className="text-sm text-yellow-800 dark:text-yellow-200">
+                                Available stock: <strong>{selectedProduct.quantityInStock}</strong> units
+                            </p>
+                        </div>
+                    )}
 
                     <div>
                         <label className="block text-sm font-medium text-foreground mb-2">Warehouse *</label>
@@ -175,15 +211,30 @@ const Transactions = () => {
 
                     <div>
                         <label className="block text-sm font-medium text-foreground mb-2">Transaction Type *</label>
-                        <select
-                            value={formData.transactionType}
-                            onChange={(e) => setFormData({ ...formData, transactionType: e.target.value })}
-                            className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                            required
-                        >
-                            <option value="IN">Stock In (Receive)</option>
-                            <option value="OUT">Stock Out (Dispatch)</option>
-                        </select>
+                        <div className="grid grid-cols-2 gap-3">
+                            <button
+                                type="button"
+                                onClick={() => setFormData({ ...formData, transactionType: 'IN' })}
+                                className={`px-4 py-2 rounded-md font-medium transition-colors ${
+                                    formData.transactionType === 'IN'
+                                        ? 'bg-green-600 text-white'
+                                        : 'bg-muted text-muted-foreground hover:bg-accent'
+                                }`}
+                            >
+                                Stock In (Receive)
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setFormData({ ...formData, transactionType: 'OUT' })}
+                                className={`px-4 py-2 rounded-md font-medium transition-colors ${
+                                    formData.transactionType === 'OUT'
+                                        ? 'bg-red-600 text-white'
+                                        : 'bg-muted text-muted-foreground hover:bg-accent'
+                                }`}
+                            >
+                                Stock Out (Dispatch)
+                            </button>
+                        </div>
                     </div>
 
                     <div>
@@ -195,17 +246,19 @@ const Transactions = () => {
                             onChange={(e) => setFormData({ ...formData, quantityMoved: e.target.value })}
                             className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                             required
+                            placeholder="Enter quantity"
                         />
                     </div>
 
                     <div>
                         <label className="block text-sm font-medium text-foreground mb-2">Transaction Date</label>
                         <input
-                            type="date"
+                            type="datetime-local"
                             value={formData.transactionDate}
                             onChange={(e) => setFormData({ ...formData, transactionDate: e.target.value })}
                             className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                         />
+                        <p className="text-xs text-muted-foreground mt-1">Leave empty to use current date/time</p>
                     </div>
 
                     <div className="flex justify-end space-x-3 pt-4">
@@ -220,7 +273,7 @@ const Transactions = () => {
                             type="submit"
                             className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
                         >
-                            {editingTransaction ? 'Update' : 'Create'}
+                            {editingTransaction ? 'Update Transaction' : 'Record Transaction'}
                         </button>
                     </div>
                 </form>

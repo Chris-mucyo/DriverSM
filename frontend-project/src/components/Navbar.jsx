@@ -72,7 +72,7 @@ const Navbar = ({ toggleTheme, isDark }) => {
 
                         <div className="flex items-center space-x-3">
                             <div className="text-right hidden sm:block">
-                                <p className="text-sm font-medium text-foreground">{user?.username}</p>
+                                <p className="text-sm font-medium text-foreground">{user?.username || 'User'}</p>
                                 <p className="text-xs text-muted-foreground">Store Manager</p>
                             </div>
                             <button
