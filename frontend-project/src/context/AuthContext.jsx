@@ -36,6 +36,19 @@ export const AuthProvider = ({ children }) => {
         }
     }
 
+    const register = async (username, password) => {
+        try {
+            const response = await axios.post('/api/auth/register', { username, password })
+            if (response.data.success) {
+                toast.success('Registration successful! Please login.')
+                return true
+            }
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Registration failed')
+            return false
+        }
+    }
+
     const logout = () => {
         localStorage.removeItem('token')
         localStorage.removeItem('user')
@@ -45,7 +58,7 @@ export const AuthProvider = ({ children }) => {
     }
 
     return (
-        <AuthContext.Provider value={{ user, login, logout, loading }}>
+        <AuthContext.Provider value={{ user, login, register, logout, loading }}>
             {children}
         </AuthContext.Provider>
     )
